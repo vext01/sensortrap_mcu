@@ -21,21 +21,19 @@ function sensortrap._check_response(expect, got)
 	end
 end
 
--- use a closure to encapsulate context
-function sensortrap._mk_rcv()
+function sensortrap._again(ctx, con)
+	con:close()
+	ctx.state = "init"
+	sensortrap._set_alarm(ctx)
+end
 
-	local ctx = {
-		state = "init",
-		payload = nil
-	}
-
+function sensortrap._mk_rcv_cb(ctx)
 	-- a state machine
 	return function(con, data)
 		print("rcv: state = " .. ctx.state)
 		if ctx.state == "init" then
 			if not sensortrap._check_response("HI", data) then
-				con:close()
-				sensortrap._set_alarm()
+				sensortrap._again(ctx, con)
 			else
 				sensortrap._make_payload(ctx)
 				local resp = string.len(ctx.payload) .. "\r\n"
@@ -44,40 +42,49 @@ function sensortrap._mk_rcv()
 			end
 		elseif ctx.state == "lensent" then
 			if not sensortrap._check_response("OK", data) then
-				con:close()
-				ctx.state = "init"
-				sensortrap._set_alarm()
+				sensortrap._again(ctx, con)
 			else
 				conn:send(ctx.payload)
 				ctx.state = "payloadsent"
 			end
 		elseif ctx.state == "payloadsent" then
 			if not sensortrap._check_response("OK", data) then
-				con:close()
+				sensortrap._again(ctx, con)
 			else
-				conn:close()
 				print("rcv: done")
-				ctx.state = "init"
-				sensortrap._set_alarm()
+				sensortrap._again(ctx, con)
 			end
 		end
 	end
 end
 
-function sensortrap._set_alarm()
-	print("set alarm")
-	tmr.alarm(0, 1000, 0, sensortrap._start)
+function sensortrap._mk_alarm_cb(ctx)
+	return function()
+		conn = net.createConnection(net.TCP, false)
+		conn:on("receive", sensortrap._mk_rcv_cb(ctx))
+		conn:connect(ctx.port, ctx.addr_s)
+	end
 end
 
-function sensortrap.start()
-	sensortrap._set_alarm()
+function sensortrap._set_alarm(ctx)
+	tmr.alarm(0, ctx.intvl_ms, 0, ctx.alrm_cb)
 end
 
-function sensortrap._start()
-	print("fire")
-	conn = net.createConnection(net.TCP, false)
-	conn:on("receive", sensortrap._mk_rcv())
-	conn:connect(5050, "192.168.1.5")
+function sensortrap.start(addr_s, port, intvl_ms, s_group, n_sensors)
+	-- Set up a context. Use closures to avoid global scope.
+	local ctx = {
+		state = "init",
+		payload = nil,
+		addr_s = addr_s,
+		port = port,
+		intvl_ms = intvl_ms,
+		s_group = s_group,
+		n_sensors = n_sensors,
+		alrm_cb = nil,
+	}
+
+	ctx.alrm_cb = sensortrap._mk_alarm_cb(ctx)
+	sensortrap._set_alarm(ctx)
 end
 
 return sensortrap
