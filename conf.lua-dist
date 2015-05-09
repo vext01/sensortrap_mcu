@@ -1,12 +1,17 @@
 conf = {}
 
--- network
+-- local network settings
 conf.ssid = "xxx"
 conf.pass = "xxx"
 
+-- remote network settings
+conf.trap_addr = "192.168.1.5"
+conf.trap_port = 5050
+
 -- sensors
-s_group = 0
-n_sensors = 1
+conf.sensor_group = 0
+conf.num_sensors = 1
+conf.read_intvl = 10 -- secs
 
 -- pins
 conf.power_led = 1

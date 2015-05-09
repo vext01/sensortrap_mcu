@@ -22,6 +22,6 @@ tmr.alarm(1, 1000, 1, function()
 
 	-- execute our code
 	local st = require("sensortrap")
-	st.start("192.168.1.5", 5050, 10, 0, 1)
+	st.start(conf)
     end
  end)

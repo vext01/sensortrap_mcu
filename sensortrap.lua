@@ -2,8 +2,8 @@ conf = require("conf") -- we will never run concurrent readings, so fine
 
 sensortrap = {} -- module table
 
-function sensortrap._make_payload(ctx)
-	ctx.payload = '{ "payload": 666 }'
+function sensortrap._make_payload()
+	conf.payload = '{ "payload": 666 }'
 end
 
 function sensortrap._check_response(expect, got)
@@ -22,58 +22,55 @@ function sensortrap._check_response(expect, got)
 end
 
 -- sends the board to deep sleep for some time, reset upon wake.
-function sensortrap._again(ctx, con)
+function sensortrap._again(con)
 	con:close()
-	print("Zzz...")
-	node.dsleep(ctx.intvl_secs * 1000 * 1000)
+	print(string.format("Going to sleep for %d seconds", conf.read_intvl))
+	node.dsleep(conf.read_intvl * 1000 * 1000)
 end
 
-function sensortrap._mk_rcv_cb(ctx)
-	gpio.write(conf.connect_led, gpio.HIGH)
-	-- a state machine
-	return function(con, data)
-		print("rcv: state = " .. ctx.state)
-		if ctx.state == "init" then
-			if not sensortrap._check_response("HI", data) then
-				sensortrap._again(ctx, con)
-			else
-				sensortrap._make_payload(ctx)
-				local resp = string.len(ctx.payload) .. "\r\n"
-				conn:send(resp .. "\r\n")
-				ctx.state = "lensent"
-			end
-		elseif ctx.state == "lensent" then
-			if not sensortrap._check_response("OK", data) then
-				sensortrap._again(ctx, con)
-			else
-				conn:send(ctx.payload)
-				ctx.state = "payloadsent"
-			end
-		elseif ctx.state == "payloadsent" then
-			if not sensortrap._check_response("OK", data) then
-				sensortrap._again(ctx, con)
-			else
-				print("rcv: done")
-				sensortrap._again(ctx, con)
-			end
+-- a state machine
+function sensortrap._rcv_cb(con, data)
+	print("rcv: state = " .. conf.state)
+	if conf.state == "init" then
+		if not sensortrap._check_response("HI", data) then
+			sensortrap._again(con)
+		else
+			sensortrap._make_payload()
+			local resp = string.len(conf.payload) .. "\r\n"
+			conn:send(resp .. "\r\n")
+			conf.state = "lensent"
+		end
+	elseif conf.state == "lensent" then
+		if not sensortrap._check_response("OK", data) then
+			sensortrap._again(con)
+		else
+			conn:send(conf.payload)
+			conf.state = "payloadsent"
+		end
+	elseif conf.state == "payloadsent" then
+		if not sensortrap._check_response("OK", data) then
+			sensortrap._again(con)
+		else
+			print("rcv: done")
+			sensortrap._again(con)
 		end
 	end
 end
 
-function sensortrap.start(addr_s, port, intvl_secs, s_group, n_sensors)
-	-- Set up a context. Use closures to avoid global scope.
-	local ctx = {
-		state = "init",		-- state machine current state
-		payload = nil,		-- json payload
-		intvl_secs = intvl_secs,-- time to sleep between readings
-		s_group = s_group,	-- sensor group (integer)
-		n_sensors = n_sensors,	-- number of sensors
-	}
+function sensortrap.f(con)
+	print("yeh")
+end
 
+function sensortrap.start(conf)
 	conn = net.createConnection(net.TCP, false)
-	conn:on("receive", sensortrap._mk_rcv_cb(ctx))
-	print(string.format("connecting to %s:%d", addr_s, port))
-	conn:connect(port, addr_s)
+	print(sensortrap._rcv_cb)
+	conn:on("receive", sensortrap._rcv_cb)
+
+	tmr.delay(1000000)
+
+	print(string.format("connecting to %s:%d", conf.trap_addr, conf.trap_port))
+	conf.state = "init"
+	conn:connect(conf.trap_port, conf.trap_addr)
 end
 
 return sensortrap
