@@ -1,6 +1,6 @@
--- file.remove("user.lua")
+conf = require("conf") -- we will never run concurrent readings, so fine
 
-local sensortrap = {}
+sensortrap = {} -- module table
 
 function sensortrap._make_payload(ctx)
 	ctx.payload = '{ "payload": 666 }'
@@ -21,13 +21,15 @@ function sensortrap._check_response(expect, got)
 	end
 end
 
+-- sends the board to deep sleep for some time, reset upon wake.
 function sensortrap._again(ctx, con)
 	con:close()
-	ctx.state = "init"
-	sensortrap._set_alarm(ctx)
+	print("Zzz...")
+	node.dsleep(ctx.intvl_secs * 1000 * 1000)
 end
 
 function sensortrap._mk_rcv_cb(ctx)
+	gpio.write(conf.connect_led, gpio.HIGH)
 	-- a state machine
 	return function(con, data)
 		print("rcv: state = " .. ctx.state)
@@ -58,33 +60,20 @@ function sensortrap._mk_rcv_cb(ctx)
 	end
 end
 
-function sensortrap._mk_alarm_cb(ctx)
-	return function()
-		conn = net.createConnection(net.TCP, false)
-		conn:on("receive", sensortrap._mk_rcv_cb(ctx))
-		conn:connect(ctx.port, ctx.addr_s)
-	end
-end
-
-function sensortrap._set_alarm(ctx)
-	tmr.alarm(0, ctx.intvl_ms, 0, ctx.alrm_cb)
-end
-
-function sensortrap.start(addr_s, port, intvl_ms, s_group, n_sensors)
+function sensortrap.start(addr_s, port, intvl_secs, s_group, n_sensors)
 	-- Set up a context. Use closures to avoid global scope.
 	local ctx = {
-		state = "init",
-		payload = nil,
-		addr_s = addr_s,
-		port = port,
-		intvl_ms = intvl_ms,
-		s_group = s_group,
-		n_sensors = n_sensors,
-		alrm_cb = nil,
+		state = "init",		-- state machine current state
+		payload = nil,		-- json payload
+		intvl_secs = intvl_secs,-- time to sleep between readings
+		s_group = s_group,	-- sensor group (integer)
+		n_sensors = n_sensors,	-- number of sensors
 	}
 
-	ctx.alrm_cb = sensortrap._mk_alarm_cb(ctx)
-	sensortrap._set_alarm(ctx)
+	conn = net.createConnection(net.TCP, false)
+	conn:on("receive", sensortrap._mk_rcv_cb(ctx))
+	print(string.format("connecting to %s:%d", addr_s, port))
+	conn:connect(port, addr_s)
 end
 
 return sensortrap

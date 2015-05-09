@@ -1,0 +1,18 @@
+conf = {}
+
+-- network
+conf.ssid = "xxx"
+conf.pass = "xxx"
+
+-- sensors
+s_group = 0
+n_sensors = 1
+
+-- pins
+conf.power_led = 1
+conf.wifi_led = 2
+conf.connect_led = 3
+
+return conf
+
+-- file.remove("init.lua")
